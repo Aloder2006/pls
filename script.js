@@ -14,7 +14,7 @@ const downloadButton = document.getElementById('downloadButton');
 const newImageButton = document.getElementById('newImageButton');
 const shareButton = document.getElementById('shareButton');
 
-// Flag configuration
+// Palestinian flag configuration
 const flagConfig = {
     stripes: [
         { color: 'black', position: 0 },
@@ -26,6 +26,11 @@ const flagConfig = {
         width: 1/3
     }
 };
+
+// Canvas for live preview
+let liveCanvas = null;
+let liveCtx = null;
+let userImage = null;
 
 // Listen for file selection via button
 chooseFileButton.addEventListener('click', () => {
@@ -56,20 +61,13 @@ downloadButton.addEventListener('click', downloadImage);
 // Share button click handler
 shareButton.addEventListener('click', shareImage);
 
-// Image position handler
+// Live editing controls
 if (document.getElementById('imagePositionSlider')) {
-    document.getElementById('imagePositionSlider').addEventListener('input', (e) => {
-        if (preview.src) {
-            document.documentElement.style.setProperty('--image-zoom', e.target.value + '%');
-        }
-    });
+    document.getElementById('imagePositionSlider').addEventListener('input', updateLivePreview);
 }
 
-// Opacity handler
 if (document.getElementById('opacitySlider')) {
-    document.getElementById('opacitySlider').addEventListener('input', (e) => {
-        document.documentElement.style.setProperty('--flag-opacity', e.target.value / 100);
-    });
+    document.getElementById('opacitySlider').addEventListener('input', updateLivePreview);
 }
 
 // Drag and drop handlers
@@ -119,8 +117,14 @@ function handleFileSelect() {
     const reader = new FileReader();
     
     reader.onload = (e) => {
+        // Store the image for live preview
+        userImage = new Image();
+        userImage.onload = () => {
+            setupLivePreview();
+            showPreview(true);
+        };
+        userImage.src = e.target.result;
         preview.src = e.target.result;
-        showPreview(true);
     };
     
     reader.onerror = () => {
@@ -128,6 +132,137 @@ function handleFileSelect() {
     };
     
     reader.readAsDataURL(file);
+}
+
+/**
+ * Setup the live preview canvas
+ */
+function setupLivePreview() {
+    // Create canvas if it doesn't exist
+    if (!liveCanvas) {
+        liveCanvas = document.createElement('canvas');
+        liveCanvas.className = 'live-preview-canvas';
+        // Insert canvas before the preview image
+        previewContainer.insertBefore(liveCanvas, preview);
+        liveCtx = liveCanvas.getContext('2d');
+    }
+    
+    // Set canvas dimensions to match the preview container
+    const previewWidth = previewContainer.clientWidth;
+    const previewHeight = previewContainer.clientHeight;
+    
+    // Set canvas size to maintain aspect ratio but fit within container
+    const aspectRatio = userImage.width / userImage.height;
+    let canvasWidth, canvasHeight;
+    
+    if (aspectRatio > 1) {
+        // Landscape image
+        canvasWidth = Math.min(previewWidth, 500);
+        canvasHeight = canvasWidth / aspectRatio;
+    } else {
+        // Portrait or square image
+        canvasHeight = Math.min(previewHeight, 350);
+        canvasWidth = canvasHeight * aspectRatio;
+    }
+    
+    liveCanvas.width = canvasWidth;
+    liveCanvas.height = canvasHeight;
+    
+    // Hide the original preview image
+    preview.style.display = 'none';
+    
+    // Draw the initial live preview
+    updateLivePreview();
+}
+
+/**
+ * Update the live preview with current settings
+ */
+function updateLivePreview() {
+    if (!liveCanvas || !liveCtx || !userImage) return;
+    
+    // Clear the canvas
+    liveCtx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+    
+    // Draw the flag background first
+    drawFlagOnCanvas(liveCanvas, liveCtx);
+    
+    // Get image position and opacity values
+    const imagePositionSlider = document.getElementById('imagePositionSlider');
+    const opacitySlider = document.getElementById('opacitySlider');
+    
+    const imageZoom = imagePositionSlider ? parseFloat(imagePositionSlider.value) / 100 : 0.85;
+    const flagOpacity = opacitySlider ? parseFloat(opacitySlider.value) / 100 : 0.7;
+    
+    // Calculate dimensions for the profile picture
+    const size = Math.min(liveCanvas.width, liveCanvas.height) * imageZoom;
+    const x = (liveCanvas.width - size) / 2;
+    const y = (liveCanvas.height - size) / 2;
+    
+    // Create circular clipping path for the image
+    liveCtx.save();
+    liveCtx.beginPath();
+    liveCtx.arc(liveCanvas.width / 2, liveCanvas.height / 2, size / 2, 0, Math.PI * 2, true);
+    liveCtx.closePath();
+    liveCtx.clip();
+    
+    // Draw the profile picture
+    liveCtx.drawImage(userImage, x, y, size, size);
+    liveCtx.restore();
+    
+    // Draw a circle border
+    liveCtx.beginPath();
+    liveCtx.arc(liveCanvas.width / 2, liveCanvas.height / 2, size / 2, 0, Math.PI * 2);
+    liveCtx.lineWidth = 2;
+    liveCtx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    liveCtx.stroke();
+    
+    // Update display values if elements exist
+    const zoomValueDisplay = document.getElementById('zoomValue');
+    const opacityValueDisplay = document.getElementById('opacityValue');
+    
+    if (zoomValueDisplay) {
+        zoomValueDisplay.textContent = `${Math.round(imageZoom * 100)}%`;
+    }
+    
+    if (opacityValueDisplay) {
+        opacityValueDisplay.textContent = `${Math.round(flagOpacity * 100)}%`;
+    }
+}
+
+/**
+ * Draw the Palestinian flag on the specified canvas
+ * @param {HTMLCanvasElement} canvas - The canvas element
+ * @param {CanvasRenderingContext2D} ctx - The canvas context
+ */
+function drawFlagOnCanvas(canvas, ctx) {
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Get flag opacity
+    const opacitySlider = document.getElementById('opacitySlider');
+    const flagOpacity = opacitySlider ? parseFloat(opacitySlider.value) / 100 : 0.7;
+    
+    // Apply opacity
+    ctx.globalAlpha = flagOpacity;
+    
+    // Draw stripes
+    flagConfig.stripes.forEach(stripe => {
+        ctx.fillStyle = stripe.color;
+        ctx.fillRect(0, stripe.position * height, width, height / 3);
+    });
+    
+    // Draw triangle
+    ctx.fillStyle = flagConfig.triangle.color;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, height);
+    ctx.lineTo(width * flagConfig.triangle.width, height / 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Reset opacity
+    ctx.globalAlpha = 1.0;
 }
 
 /**
@@ -190,6 +325,13 @@ function isElementInViewport(el) {
  */
 function resetImageSelection() {
     fileInput.value = '';
+    userImage = null;
+    if (liveCanvas) {
+        previewContainer.removeChild(liveCanvas);
+        liveCanvas = null;
+        liveCtx = null;
+    }
+    preview.style.display = 'block';
     showPreview(false);
 }
 
@@ -203,103 +345,116 @@ function resetAll() {
 }
 
 /**
- * Create a flag background using Canvas
- * @param {HTMLCanvasElement} canvas - Canvas element
- * @param {CanvasRenderingContext2D} ctx - Canvas context
- */
-function createFlagBackground(canvas, ctx) {
-    const width = canvas.width;
-    const height = canvas.height;
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, width, height);
-    
-    // Get flag opacity
-    const opacitySlider = document.getElementById('opacitySlider');
-    const flagOpacity = opacitySlider ? opacitySlider.value / 100 : 0.7;
-    
-    // Draw stripes with opacity
-    ctx.globalAlpha = flagOpacity;
-    flagConfig.stripes.forEach(stripe => {
-        ctx.fillStyle = stripe.color;
-        const stripeHeight = height / 3;
-        ctx.fillRect(0, stripe.position * height, width, stripeHeight);
-    });
-    
-    // Add triangle
-    ctx.fillStyle = flagConfig.triangle.color;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, height);
-    ctx.lineTo(width * flagConfig.triangle.width, height / 2);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Reset opacity
-    ctx.globalAlpha = 1.0;
-}
-
-/**
  * Process the image with the flag overlay
  */
 function processImage() {
     try {
-        const img = new Image();
-        
-        img.onload = () => {
-            // Create canvas
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+        // If we already have the live canvas, use that for the final result
+        if (liveCanvas && userImage) {
+            // Create a new canvas at higher resolution for the final image
+            const finalCanvas = document.createElement('canvas');
+            const finalCtx = finalCanvas.getContext('2d');
             
-            // Set canvas dimensions
-            canvas.width = 1000;
-            canvas.height = 1000;
+            // Set canvas dimensions (higher quality)
+            finalCanvas.width = 1000;
+            finalCanvas.height = 1000;
             
-            // Create flag background
-            createFlagBackground(canvas, ctx);
-
+            // Draw the flag background
+            drawFlagOnCanvas(finalCanvas, finalCtx);
+            
             // Get image position
             const positionSlider = document.getElementById('imagePositionSlider');
-            const imageZoom = positionSlider ? positionSlider.value / 100 : 0.85;
+            const imageZoom = positionSlider ? parseFloat(positionSlider.value) / 100 : 0.85;
             
             // Calculate dimensions for the profile picture
-            const size = Math.min(canvas.width, canvas.height) * imageZoom;
-            const x = (canvas.width - size) / 2;
-            const y = (canvas.height - size) / 2;
+            const size = Math.min(finalCanvas.width, finalCanvas.height) * imageZoom;
+            const x = (finalCanvas.width - size) / 2;
+            const y = (finalCanvas.height - size) / 2;
             
             // Create circular clipping path
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(canvas.width / 2, canvas.height / 2, size / 2, 0, Math.PI * 2, true);
-            ctx.closePath();
-            ctx.clip();
+            finalCtx.save();
+            finalCtx.beginPath();
+            finalCtx.arc(finalCanvas.width / 2, finalCanvas.height / 2, size / 2, 0, Math.PI * 2, true);
+            finalCtx.closePath();
+            finalCtx.clip();
             
             // Draw the profile picture
-            ctx.drawImage(img, x, y, size, size);
+            finalCtx.drawImage(userImage, x, y, size, size);
             
             // Add a subtle shadow around the circle
-            ctx.restore();
-            ctx.beginPath();
-            ctx.arc(canvas.width / 2, canvas.height / 2, size / 2, 0, Math.PI * 2, true);
-            ctx.closePath();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.stroke();
+            finalCtx.restore();
+            finalCtx.beginPath();
+            finalCtx.arc(finalCanvas.width / 2, finalCanvas.height / 2, size / 2, 0, Math.PI * 2, true);
+            finalCtx.closePath();
+            finalCtx.lineWidth = 2;
+            finalCtx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            finalCtx.stroke();
             
             // Display the result
-            result.src = canvas.toDataURL('image/png');
+            result.src = finalCanvas.toDataURL('image/png');
             result.onload = () => {
                 showLoading(false);
                 showResult(true);
             };
-        };
-        
-        img.onerror = () => {
-            showError('حدث خطأ أثناء تحميل الصورة');
-            showLoading(false);
-        };
-        
-        img.src = preview.src;
+        } else {
+            // Fallback to the old method if no live canvas
+            const img = new Image();
+            
+            img.onload = () => {
+                // Create canvas
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Set canvas dimensions
+                canvas.width = 1000;
+                canvas.height = 1000;
+                
+                // Draw flag background
+                drawFlagOnCanvas(canvas, ctx);
+                
+                // Get image position
+                const positionSlider = document.getElementById('imagePositionSlider');
+                const imageZoom = positionSlider ? parseFloat(positionSlider.value) / 100 : 0.85;
+                
+                // Calculate dimensions for the profile picture
+                const size = Math.min(canvas.width, canvas.height) * imageZoom;
+                const x = (canvas.width - size) / 2;
+                const y = (canvas.height - size) / 2;
+                
+                // Create circular clipping path
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2, size / 2, 0, Math.PI * 2, true);
+                ctx.closePath();
+                ctx.clip();
+                
+                // Draw the profile picture
+                ctx.drawImage(img, x, y, size, size);
+                
+                // Add a subtle shadow around the circle
+                ctx.restore();
+                ctx.beginPath();
+                ctx.arc(canvas.width / 2, canvas.height / 2, size / 2, 0, Math.PI * 2, true);
+                ctx.closePath();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.stroke();
+                
+                // Display the result
+                result.src = canvas.toDataURL('image/png');
+                result.onload = () => {
+                    showLoading(false);
+                    showResult(true);
+                };
+            };
+            
+            img.onerror = () => {
+                showError('حدث خطأ أثناء تحميل الصورة');
+                showLoading(false);
+            };
+            
+            img.src = preview.src;
+        }
     } catch (error) {
         console.error('Error in processImage:', error);
         showError('حدث خطأ أثناء معالجة الصورة');
@@ -405,7 +560,7 @@ function showError(message) {
     }
 }
 
-// Initialize tooltips
+// Initialize tooltips and other components
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize Bootstrap tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
