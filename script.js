@@ -32,10 +32,6 @@ let liveCanvas = null;
 let liveCtx = null;
 let userImage = null;
 
-// Listen for file selection via button
-chooseFileButton.addEventListener('click', () => {
-    fileInput.click();
-});
 
 // File input change handler
 fileInput.addEventListener('change', handleFileSelect);
