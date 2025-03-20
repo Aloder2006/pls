@@ -64,6 +64,8 @@ shareButton.addEventListener('click', shareImage);
 // Live editing controls
 const imagePositionSlider = document.getElementById('imagePositionSlider');
 const opacitySlider = document.getElementById('opacitySlider');
+const zoomValueDisplay = document.getElementById('zoomValue');
+const opacityValueDisplay = document.getElementById('opacityValue');
 
 if (imagePositionSlider) {
     imagePositionSlider.addEventListener('input', updateLivePreview);
@@ -91,10 +93,6 @@ uploadArea.addEventListener('drop', (e) => {
         fileInput.files = e.dataTransfer.files;
         handleFileSelect();
     }
-});
-
-uploadArea.addEventListener('click', () => {
-    fileInput.click();
 });
 
 /**
@@ -175,6 +173,11 @@ function setupLivePreview() {
             canvasWidth = canvasHeight * aspectRatio;
         }
         
+        // For circular preview, make canvas square with minimum side
+        const minSize = Math.min(canvasWidth, canvasHeight);
+        canvasWidth = minSize;
+        canvasHeight = minSize;
+        
         // Ensure minimum dimensions for better preview
         canvasWidth = Math.max(canvasWidth, 200);
         canvasHeight = Math.max(canvasHeight, 200);
@@ -212,14 +215,14 @@ function updateLivePreview() {
         const imageZoom = imagePositionSlider ? parseFloat(imagePositionSlider.value) / 100 : 0.85;
         const flagOpacity = opacitySlider ? parseFloat(opacitySlider.value) / 100 : 0.7;
         
-        // Calculate dimensions for the profile picture
+        // Calculate dimensions for the profile picture (using full canvas for circular image)
         const size = Math.min(liveCanvas.width, liveCanvas.height) * imageZoom;
         const x = (liveCanvas.width - size) / 2;
         const y = (liveCanvas.height - size) / 2;
         
         // Draw the flag background with specified opacity
         liveCtx.globalAlpha = flagOpacity;
-        drawFlagOnCanvas(liveCanvas, liveCtx, false); // Don't use slider here as we already got the value
+        drawFlagOnCanvas(liveCanvas, liveCtx);
         liveCtx.globalAlpha = 1.0;
         
         // Create circular clipping path for the image
@@ -229,8 +232,22 @@ function updateLivePreview() {
         liveCtx.closePath();
         liveCtx.clip();
         
-        // Draw the profile picture
-        liveCtx.drawImage(userImage, x, y, size, size);
+        // Calculate source dimensions to maintain aspect ratio
+        let sx = 0, sy = 0, sWidth = userImage.width, sHeight = userImage.height;
+        const imgAspect = userImage.width / userImage.height;
+        
+        if (imgAspect > 1) {
+            // Landscape: crop sides
+            sWidth = userImage.height;
+            sx = (userImage.width - sWidth) / 2;
+        } else if (imgAspect < 1) {
+            // Portrait: crop top/bottom
+            sHeight = userImage.width;
+            sy = (userImage.height - sHeight) / 2;
+        }
+        
+        // Draw the profile picture (centered and cropped)
+        liveCtx.drawImage(userImage, sx, sy, sWidth, sHeight, x, y, size, size);
         liveCtx.restore();
         
         // Draw a circle border
@@ -241,9 +258,6 @@ function updateLivePreview() {
         liveCtx.stroke();
         
         // Update display values if elements exist
-        const zoomValueDisplay = document.getElementById('zoomValue');
-        const opacityValueDisplay = document.getElementById('opacityValue');
-        
         if (zoomValueDisplay) {
             zoomValueDisplay.textContent = `${Math.round(imageZoom * 100)}%`;
         }
@@ -253,6 +267,7 @@ function updateLivePreview() {
         }
     } catch (error) {
         console.error('Error in updateLivePreview:', error);
+        // Continue showing even if there's an error
     }
 }
 
@@ -260,17 +275,10 @@ function updateLivePreview() {
  * Draw the Palestinian flag on the specified canvas
  * @param {HTMLCanvasElement} canvas - The canvas element
  * @param {CanvasRenderingContext2D} ctx - The canvas context
- * @param {boolean} useSlider - Whether to use the opacity slider value
  */
-function drawFlagOnCanvas(canvas, ctx, useSlider = true) {
+function drawFlagOnCanvas(canvas, ctx) {
     const width = canvas.width;
     const height = canvas.height;
-    
-    // Get flag opacity if needed
-    if (useSlider) {
-        const flagOpacity = opacitySlider ? parseFloat(opacitySlider.value) / 100 : 0.7;
-        ctx.globalAlpha = flagOpacity;
-    }
     
     // Draw stripes
     flagConfig.stripes.forEach(stripe => {
@@ -286,11 +294,6 @@ function drawFlagOnCanvas(canvas, ctx, useSlider = true) {
     ctx.lineTo(width * flagConfig.triangle.width, height / 2);
     ctx.closePath();
     ctx.fill();
-    
-    // Reset opacity if needed
-    if (useSlider) {
-        ctx.globalAlpha = 1.0;
-    }
 }
 
 /**
@@ -384,7 +387,7 @@ function processImage() {
         const finalCanvas = document.createElement('canvas');
         const finalCtx = finalCanvas.getContext('2d');
         
-        // Set canvas dimensions (higher quality)
+        // Set canvas dimensions (higher quality, square for circular image)
         finalCanvas.width = 1000;
         finalCanvas.height = 1000;
         
@@ -396,7 +399,7 @@ function processImage() {
         finalCtx.globalAlpha = flagOpacity;
         
         // Draw the flag background
-        drawFlagOnCanvas(finalCanvas, finalCtx, false);
+        drawFlagOnCanvas(finalCanvas, finalCtx);
         
         // Reset opacity
         finalCtx.globalAlpha = 1.0;
@@ -406,6 +409,20 @@ function processImage() {
         const x = (finalCanvas.width - size) / 2;
         const y = (finalCanvas.height - size) / 2;
         
+        // Calculate source dimensions to maintain aspect ratio
+        let sx = 0, sy = 0, sWidth = userImage.width, sHeight = userImage.height;
+        const imgAspect = userImage.width / userImage.height;
+        
+        if (imgAspect > 1) {
+            // Landscape: crop sides
+            sWidth = userImage.height;
+            sx = (userImage.width - sWidth) / 2;
+        } else if (imgAspect < 1) {
+            // Portrait: crop top/bottom
+            sHeight = userImage.width;
+            sy = (userImage.height - sHeight) / 2;
+        }
+        
         // Create circular clipping path
         finalCtx.save();
         finalCtx.beginPath();
@@ -413,8 +430,8 @@ function processImage() {
         finalCtx.closePath();
         finalCtx.clip();
         
-        // Draw the profile picture
-        finalCtx.drawImage(userImage, x, y, size, size);
+        // Draw the profile picture (centered and cropped)
+        finalCtx.drawImage(userImage, sx, sy, sWidth, sHeight, x, y, size, size);
         
         // Add a subtle shadow around the circle
         finalCtx.restore();
@@ -604,18 +621,16 @@ function showToast(message, type = 'default') {
     });
 }
 
-// Initialize tooltips and other components
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize Bootstrap tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-    
-    // Check if chooseFileButton exists and connect it to fileInput
-    if (chooseFileButton) {
-        chooseFileButton.addEventListener('click', () => {
-            fileInput.click();
-        });
-    }
 });
+
+
+
+
+
+
